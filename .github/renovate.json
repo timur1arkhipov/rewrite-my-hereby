@@ -1,0 +1,59 @@
+{
+    "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+    "extends": [
+        "config:recommended",
+        "helpers:pinGitHubActionDigests"
+    ],
+    "rangeStrategy": "bump",
+    "packageRules": [
+        {
+            "description": "Ignore nodejs",
+            "matchPackageNames": ["node"],
+            "matchManagers": ["npm"],
+            "matchDepTypes": ["engines"],
+            "enabled": false
+        },
+        {
+            "matchPackageNames": ["npm"],
+            "allowedVersions": "^8"
+        },
+        {
+            "matchPackageNames": ["emittery"],
+            "allowedVersions": "1.0.0"
+        },
+        {
+            "matchPackageNames": ["ava"],
+            "allowedVersions": "~5.0.1"
+        },
+        {
+            "matchPackageNames": ["execa"],
+            "allowedVersions": "~5.0.1"
+        },
+        {
+            "matchPackageNames": ["command-line-usage"],
+            "allowedVersions": "^6"
+        },
+        {
+            "matchPackageNames": ["c8"],
+            "allowedVersions": "^8"
+        },
+        {
+            "matchPackageNames": ["pretty-ms"],
+            "allowedVersions": "^8"
+        },
+        {
+            "matchPackageNames": ["tmp"],
+            "allowedVersions": "0.2.1"
+        },
+        {
+            "matchManagers": ["github-actions"],
+            "groupName": "github actions",
+            "groupSlug": "github-actions"
+        },
+        {
+            "matchManagers": ["github-actions"],
+            "matchPackageNames": ["slsa-framework/slsa-github-generator"],
+            "pinDigests": false
+        }
+    ]
+}

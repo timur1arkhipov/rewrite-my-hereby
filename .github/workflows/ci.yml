@@ -1,0 +1,167 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  schedule:
+    - cron: '15 0 * * *'
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node-version: [14, 16, 18, 20, 22]
+        coverage: [true]
+        include:
+          - os: ubuntu-latest
+            node-version: 12
+            coverage: false
+          - os: windows-latest
+            node-version: 12
+            coverage: false
+        exclude:
+          # macos-latest is now ARM, so exclude Node 12/14
+          - os: macos-latest
+            node-version: 14
+    runs-on: ${{ matrix.os }}
+    env:
+      OS: ${{ matrix.os }}
+      NODE: ${{ matrix.node-version }}
+
+    name: Test on ${{ matrix.os }} with Node.js ${{ matrix.node-version }}
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '*'
+
+      - run: npm ci
+        if: ${{ github.event_name != 'schedule' }}
+
+      - shell: bash
+        run: |
+          npm install -g $(jq -r '.packageManager' < package.json)
+          rm package-lock.json
+          npm i
+        if: ${{ github.event_name == 'schedule' }}
+
+      - run: npm run build
+
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: ${{ matrix.node-version }}
+          check-latest: true
+
+      - run: npm run test
+        if: ${{ ! matrix.coverage }}
+
+      - run: npm run coverage
+        if: ${{ matrix.coverage }}
+
+      - uses: codecov/codecov-action@7f8b4b4bde536c465e797be725718b88c5d95e0e # v5.1.1
+        if: ${{ matrix.coverage && github.event_name != 'schedule' }}
+        continue-on-error: true
+        timeout-minutes: 5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          env_vars: OS,NODE
+          files: ./coverage/codecov.json
+
+  eslint:
+    name: ESLint
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'schedule' }}
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '*'
+      - run: npm ci
+      - run: npx eslint .
+
+  dprint:
+    name: dprint
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'schedule' }}
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '*'
+      - run: npm ci
+      - run: npx dprint check
+
+  check-latest:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    name: Check latest on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '*'
+      - run: npm ci
+      - run: npm pack
+
+      - run: npm install -g tereby
+
+      - run: |
+          set -exo pipefail
+          WORKSPACE=$PWD
+          cd $(mktemp -d)
+          npm init -y
+          npm install $WORKSPACE/*.tgz
+
+          cp $WORKSPACE/dist/__tests__/cli/__fixtures__/Terebyfile.mjs .
+
+          tereby --tasks
+        name: Verify that latest tereby can run local tereby
+
+      - run: |
+          set -exo pipefail
+          WORKSPACE=$PWD
+          cd $(mktemp -d)
+          npm init -y
+          npm install tereby
+
+          cp $WORKSPACE/dist/__tests__/cli/__fixtures__/Terebyfile.mjs .
+
+          node $WORKSPACE/bin/tereby.js --tasks
+        name: Verify that local tereby can run latest tereby
+
+  required:
+    runs-on: ubuntu-latest
+    if: ${{ always() }}
+    needs:
+      - test
+      - eslint
+      - dprint
+      - check-latest
+
+    steps:
+      - name: Check required jobs
+        env:
+          NEEDS: ${{ toJson(needs) }}
+        run: |
+          ! echo $NEEDS | jq -e 'to_entries[] | { job: .key, result: .value.result } | select(.result == "success" or .result == "skipped" | not)'
